@@ -1,0 +1,1 @@
+include ':app', ':lib_butter_knife_annotation', ':lib_butter_knife_compiler', ':lib_butter_knife_api'
