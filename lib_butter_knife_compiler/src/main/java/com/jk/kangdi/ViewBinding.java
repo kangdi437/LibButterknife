@@ -70,7 +70,7 @@ final class ViewBinding {
     }
 
     public boolean isBoundToRoot() {
-        return ExProcessor.NO_ID.equals(id);
+        return LibButterknifeProcessor.NO_ID.equals(id);
     }
 
     public static final class Builder {

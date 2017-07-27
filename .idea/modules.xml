@@ -3,10 +3,12 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/LibButterknife.iml" filepath="$PROJECT_DIR$/LibButterknife.iml" />
-      <module fileurl="file://$PROJECT_DIR$/app/app.iml" filepath="$PROJECT_DIR$/app/app.iml" />
+      <module fileurl="file://$PROJECT_DIR$/sample/app/app.iml" filepath="$PROJECT_DIR$/sample/app/app.iml" />
       <module fileurl="file://$PROJECT_DIR$/lib_butter_knife_annotation/lib_butter_knife_annotation.iml" filepath="$PROJECT_DIR$/lib_butter_knife_annotation/lib_butter_knife_annotation.iml" />
       <module fileurl="file://$PROJECT_DIR$/lib_butter_knife_api/lib_butter_knife_api.iml" filepath="$PROJECT_DIR$/lib_butter_knife_api/lib_butter_knife_api.iml" />
       <module fileurl="file://$PROJECT_DIR$/lib_butter_knife_compiler/lib_butter_knife_compiler.iml" filepath="$PROJECT_DIR$/lib_butter_knife_compiler/lib_butter_knife_compiler.iml" />
+      <module fileurl="file://$PROJECT_DIR$/sample/library/library.iml" filepath="$PROJECT_DIR$/sample/library/library.iml" />
+      <module fileurl="file://$PROJECT_DIR$/sample/sample.iml" filepath="$PROJECT_DIR$/sample/sample.iml" />
     </modules>
   </component>
 </project>

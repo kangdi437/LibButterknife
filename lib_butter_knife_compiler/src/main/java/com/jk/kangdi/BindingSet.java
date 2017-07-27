@@ -22,10 +22,10 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.TypeMirror;
 
 import static com.google.auto.common.MoreElements.getPackage;
-import static com.jk.kangdi.ExProcessor.ACTIVITY_TYPE;
-import static com.jk.kangdi.ExProcessor.DIALOG_TYPE;
-import static com.jk.kangdi.ExProcessor.VIEW_TYPE;
-import static com.jk.kangdi.ExProcessor.isSubtypeOfType;
+import static com.jk.kangdi.LibButterknifeProcessor.ACTIVITY_TYPE;
+import static com.jk.kangdi.LibButterknifeProcessor.DIALOG_TYPE;
+import static com.jk.kangdi.LibButterknifeProcessor.VIEW_TYPE;
+import static com.jk.kangdi.LibButterknifeProcessor.isSubtypeOfType;
 import static com.squareup.javapoet.ClassName.bestGuess;
 import static java.util.Collections.singletonList;
 import static javax.lang.model.element.Modifier.FINAL;
@@ -50,18 +50,6 @@ public class BindingSet {
             ClassName.get("android.annotation", "SuppressLint");
     private static final ClassName RESOURCES = ClassName.get("android.content.res", "Resources");
 
-
-
-    private boolean hasOnTouchMethodBindings() {
-        for (ViewBinding bindings : viewBindings) {
-//            if (bindings.getMethodBindings()
-//                    .containsKey(OnTouch.class.getAnnotation(ListenerClass.class))) {
-//                return true;
-//            }
-        }
-        return false;
-    }
-
     private final TypeName targetTypeName;
     private final ClassName bindingClassName;
     private final boolean isFinal;
@@ -71,12 +59,14 @@ public class BindingSet {
     private final ImmutableList<ViewBinding> viewBindings;
     private final ImmutableList<FieldCollectionViewBinding> collectionBindings;
     private final ImmutableList<ResourceBinding> resourceBindings;
+    private final ContentViewBinding contentBinding;
     private final BindingSet parentBinding;
 
     private BindingSet(TypeName targetTypeName, ClassName bindingClassName, boolean isFinal,
                        boolean isView, boolean isActivity, boolean isDialog, ImmutableList<ViewBinding> viewBindings,
                        ImmutableList<FieldCollectionViewBinding> collectionBindings,
-                       ImmutableList<ResourceBinding> resourceBindings, BindingSet parentBinding) {
+                       ImmutableList<ResourceBinding> resourceBindings, BindingSet parentBinding ,
+                       ContentViewBinding contentBinding) {
         this.isFinal = isFinal;
         this.targetTypeName = targetTypeName;
         this.bindingClassName = bindingClassName;
@@ -87,6 +77,7 @@ public class BindingSet {
         this.collectionBindings = collectionBindings;
         this.resourceBindings = resourceBindings;
         this.parentBinding = parentBinding;
+        this.contentBinding = contentBinding;
     }
 
     public static Builder newBuilder(TypeElement enclosingElement){
@@ -104,49 +95,57 @@ public class BindingSet {
         String packageName = getPackage(enclosingElement).getQualifiedName().toString();
         String className = enclosingElement.getQualifiedName().toString().substring(
                 packageName.length() + 1).replace('.', '$');
-        ClassName bindingClassName = ClassName.get(packageName, className + "_ViewBindingName");
+        ClassName bindingClassName = ClassName.get(packageName, className + "_ViewBinding");
 
         boolean isFinal = enclosingElement.getModifiers().contains(FINAL);
         return new Builder(targetType, bindingClassName, isFinal, isView, isActivity, isDialog);
     }
 
     JavaFile brewJava(int sdk, boolean debuggable) {
-        return JavaFile.builder(bindingClassName.packageName(), createType(sdk, debuggable))
+        return JavaFile.builder(bindingClassName.packageName(), createType(sdk))
                 .addFileComment("Generated code. Do not modify!")
                 .build();
     }
-    private TypeSpec createType(int sdk, boolean debuggable) {
+    private TypeSpec createType(int sdk) {
+        //创建类 public class XXX
         TypeSpec.Builder result = TypeSpec.classBuilder(bindingClassName.simpleName())
                 .addModifiers(PUBLIC);
         if (isFinal) {
             result.addModifiers(FINAL);
         }
 
-        if (parentBinding != null) {
-            result.superclass(parentBinding.bindingClassName);
-        } else {
-            result.addSuperinterface(UNBINDER);
-        }
+        //parenBinding不为空则继承父类 , 为空则实现UNBINDER
+        //暂时不做父类的处理
+//        if (parentBinding != null) {
+//            result.superclass(parentBinding.bindingClassName);
+//        } else {
+        result.addSuperinterface(UNBINDER);
+//        }
 
         //添加成员变量
         if (hasTargetField()) {
+            //private 类 target
+            //一般为Activity , Dialog , View
             result.addField(targetTypeName, "target", PRIVATE);
         }
 
-        if (isView) {
-            result.addMethod(createBindingConstructorForView());
-        } else if (isActivity) {
-            result.addMethod(createBindingConstructorForActivity());
-        } else if (isDialog) {
-            result.addMethod(createBindingConstructorForDialog());
-        }
+        //根据上面添加的成员变量类型判断 , 创建一个参数的构造方法
+        //单个构造方法貌似并没有什么卵用
+//        if (isView) {
+//            result.addMethod(createBindingConstructorForView());
+//        } else if (isActivity) {
+//            result.addMethod(createBindingConstructorForActivity());
+//        } else if (isDialog) {
+//            result.addMethod(createBindingConstructorForDialog());
+//        }
 
-        if (!constructorNeedsView()) {
-            // Add a delegating constructor with a target type + view signature for reflective use.
-            result.addMethod(createBindingViewDelegateConstructor());
-        }
+//        if (!constructorNeedsView()) {
+//            // Add a delegating constructor with a target type + view signature for reflective use.
+//            result.addMethod(createBindingViewDelegateConstructor());
+//        }
 
-        result.addMethod(createBindingConstructor(sdk, debuggable));
+        //在创建一个构造方法 , 这个构造方法中实现所有的初始化
+        result.addMethod(createBindingConstructor(sdk));
 
         if (hasViewBindings() || parentBinding == null) {
             result.addMethod(createBindingUnbindMethod(result));
@@ -262,7 +261,12 @@ public class BindingSet {
         }
         return false;
     }
-    private MethodSpec createBindingConstructor(int sdk, boolean debuggable) {
+
+
+    private MethodSpec createBindingConstructor(int sdk) {
+        //添加注解
+        // @UiThread
+        // public
         MethodSpec.Builder constructor = MethodSpec.constructorBuilder()
                 .addAnnotation(UI_THREAD)
                 .addModifiers(PUBLIC);
@@ -273,6 +277,7 @@ public class BindingSet {
             constructor.addParameter(targetTypeName, "target");
         }
 
+        //需要View还是 , 需要Context
         if (constructorNeedsView()) {
             constructor.addParameter(VIEW, "source");
         } else {
@@ -286,12 +291,13 @@ public class BindingSet {
                     .build());
         }
 
-        if (hasOnTouchMethodBindings()) {
-            constructor.addAnnotation(AnnotationSpec.builder(SUPPRESS_LINT)
-                    .addMember("value", "$S", "ClickableViewAccessibility")
-                    .build());
-        }
+//        if (hasOnTouchMethodBindings()) {
+//            constructor.addAnnotation(AnnotationSpec.builder(SUPPRESS_LINT)
+//                    .addMember("value", "$S", "ClickableViewAccessibility")
+//                    .build());
+//        }
 
+        //不考虑父类
 //        if (parentBinding != null) {
 //            if (parentBinding.constructorNeedsView()) {
 //                constructor.addStatement("super(target, source)");
@@ -308,17 +314,24 @@ public class BindingSet {
             constructor.addCode("\n");
         }
 
+        if (hasContentBinding()){
+            constructor.addStatement("$L" , contentBinding.render());
+        }
+
         if (hasViewBindings()) {
 //            if (hasViewLocal()) {
 //                // Local variable in which all views will be temporarily stored.
 //                constructor.addStatement("$T view", VIEW);
 //            }
+
+            //实例化BindView
             for (ViewBinding binding : viewBindings) {
-                addViewBinding(constructor, binding, debuggable);
+                addViewBinding(constructor, binding);
             }
-//            for (FieldCollectionViewBinding binding : collectionBindings) {
-////                constructor.addStatement("$L", binding.render(debuggable));
-//            }
+            //实例化BindViews
+            for (FieldCollectionViewBinding binding : collectionBindings) {
+                constructor.addStatement("$L", binding.render());
+            }
 
             if (!resourceBindings.isEmpty()) {
                 constructor.addCode("\n");
@@ -340,7 +353,7 @@ public class BindingSet {
         return constructor.build();
     }
 
-    private void addViewBinding(MethodSpec.Builder result, ViewBinding binding, boolean debuggable) {
+    private void  addViewBinding(MethodSpec.Builder result, ViewBinding binding) {
         if (binding.isSingleFieldBinding()) {
             // Optimize the common case where there's a single binding directly to a field.
             FieldViewBinding fieldBinding = binding.getFieldBinding();
@@ -348,29 +361,27 @@ public class BindingSet {
             CodeBlock.Builder builder = CodeBlock.builder()
                     .add("target.$L = ", fieldBinding.getName());
 
-            //判断属性是否是 View , 如果是View在api里会直接调用findViewById()
+            //判断属性是否是 View , 如果是View 直接调用findViewById()
             boolean requiresCast = requiresCast(fieldBinding.getType());
-            if (!debuggable || (!requiresCast && !fieldBinding.isRequired())) {
-                builder.add("source.findViewById($L)", binding.getId().code);
-            } else {
-                builder.add("$T.find", UTILS);
-                builder.add(fieldBinding.isRequired() ? "RequiredView" : "OptionalView");
-                if (requiresCast) {
-                    builder.add("AsType");
-                }
-                builder.add("(source, $L", binding.getId().code);
-                if (fieldBinding.isRequired() || requiresCast) {
-                    builder.add(", $S", asHumanDescription(singletonList(fieldBinding)));
-                }
-                if (requiresCast) {
-                    builder.add(", $T.class", fieldBinding.getRawType());
-                }
-                builder.add(")");
+            builder.add("$T.find", UTILS);
+            builder.add(fieldBinding.isRequired() ? "RequiredView" : "OptionalView");
+            if (requiresCast) {
+                builder.add("AsType");
             }
+            builder.add("(source, $L", binding.getId().code);
+            //描述
+            if (fieldBinding.isRequired() || requiresCast) {
+                builder.add(", $S", asHumanDescription(singletonList(fieldBinding)));
+            }
+            if (requiresCast) {
+                builder.add(", $T.class", fieldBinding.getRawType());
+            }
+            builder.add(")");
             result.addStatement("$L", builder.build());
             return;
         }
 
+        //这里做方法处理
 //        List<MemberViewBinding> requiredBindings = binding.getRequiredBindings();
 //        if (!debuggable || requiredBindings.isEmpty()) {
 //            result.addStatement("view = source.findViewById($L)", binding.getId().code);
@@ -428,20 +439,6 @@ public class BindingSet {
         return false;
     }
 
-    private MethodSpec createBindingViewDelegateConstructor() {
-        return MethodSpec.constructorBuilder()
-                .addJavadoc("@deprecated Use {@link #$T($T, $T)} for direct creation.\n    "
-                                + "Only present for runtime invocation through {@code ButterKnife.bind()}.\n",
-                        bindingClassName, targetTypeName, CONTEXT)
-                .addAnnotation(Deprecated.class)
-                .addAnnotation(UI_THREAD)
-                .addModifiers(PUBLIC)
-                .addParameter(targetTypeName, "target")
-                .addParameter(VIEW, "source")
-                .addStatement(("this(target, source.getContext())"))
-                .build();
-    }
-
     private MethodSpec createBindingConstructorForDialog() {
         MethodSpec.Builder builder = MethodSpec.constructorBuilder()
                 .addAnnotation(UI_THREAD)
@@ -456,7 +453,6 @@ public class BindingSet {
     }
 
 
-    //创建构造方法
     private MethodSpec createBindingConstructorForActivity() {
         MethodSpec.Builder builder = MethodSpec.constructorBuilder()
                 .addAnnotation(UI_THREAD)
@@ -473,6 +469,11 @@ public class BindingSet {
         return hasFieldBindings() || hasMethodBindings();
     }
 
+    private boolean hasContentBinding(){
+        return contentBinding != null;
+    }
+
+    //是否绑定的方法 , 例如onClick
     private boolean hasMethodBindings() {
         for (ViewBinding bindings : viewBindings) {
             if (!bindings.getMethodBindings().isEmpty()) {
@@ -482,6 +483,7 @@ public class BindingSet {
         return false;
     }
 
+    //是否有BindView , 或者是否有BindViwes
     private boolean hasFieldBindings() {
         for (ViewBinding bindings : viewBindings) {
             if (bindings.getFieldBinding() != null) {
@@ -528,6 +530,7 @@ public class BindingSet {
                 ImmutableList.builder();
         private final ImmutableList.Builder<ResourceBinding> resourceBindings = ImmutableList.builder();
         private BindingSet parentBinding;
+        private ContentViewBinding contentBinding;
 
         private Builder(TypeName targetTypeName, ClassName bindingClassName, boolean isFinal,
                         boolean isView, boolean isActivity, boolean isDialog) {
@@ -571,6 +574,14 @@ public class BindingSet {
             return viewId;
         }
 
+        void addFieldCollection(FieldCollectionViewBinding binding) {
+            collectionBindings.add(binding);
+        }
+
+        public void setContentBinding(ContentViewBinding contentBinding){
+            this.contentBinding = contentBinding;
+        }
+
         BindingSet build() {
             //存储 <ViewBinding>
             ImmutableList.Builder<ViewBinding> viewBindings = ImmutableList.builder();
@@ -579,7 +590,7 @@ public class BindingSet {
             }
             return new BindingSet(targetTypeName, bindingClassName, isFinal, isView, isActivity, isDialog,
                     viewBindings.build(), collectionBindings.build(), resourceBindings.build(),
-                    parentBinding);
+                    parentBinding , contentBinding);
         }
 
     }

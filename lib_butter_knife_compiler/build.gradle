@@ -1,4 +1,8 @@
 apply plugin: 'java'
+apply plugin: 'com.novoda.bintray-release'//添加
+
+sourceCompatibility = JavaVersion.VERSION_1_7
+targetCompatibility = JavaVersion.VERSION_1_7
 
 dependencies {
     compile project (':lib_butter_knife_annotation')
@@ -9,4 +13,14 @@ dependencies {
 }
 tasks.withType(JavaCompile) {
     options.encoding = "UTF-8"
+}
+
+//添加
+publish {
+    userOrg = 'kangdi437'//bintray.com用户名
+    groupId = 'com.jk.kangdi'//jcenter上的路径
+    artifactId = 'lib_butter_knife_compiler'//项目名称
+    publishVersion = '1.0.0'//版本号
+    desc = 'test'//描述，不重要
+    website = 'https://github.com/hyman/basetools'//网站，不重要；尽量模拟github上的地址，例如我这样的；当然你有地址最好了
 }

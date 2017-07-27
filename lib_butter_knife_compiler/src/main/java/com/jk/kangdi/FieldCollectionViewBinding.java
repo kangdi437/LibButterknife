@@ -39,7 +39,7 @@ final class FieldCollectionViewBinding {
         this.required = required;
     }
 
-    CodeBlock render(boolean debuggable) {
+    CodeBlock render() {
         CodeBlock.Builder builder = CodeBlock.builder()
                 .add("target.$L = $T.$L(", name, UTILS, kind.factoryName);
         for (int i = 0; i < ids.size(); i++) {
@@ -50,12 +50,7 @@ final class FieldCollectionViewBinding {
 
             Id id = ids.get(i);
             boolean requiresCast = BindingSet.requiresCast(type);
-            if (!debuggable) {
-                if (requiresCast) {
-                    builder.add("($T) ", type);
-                }
-                builder.add("source.findViewById($L)", id.code);
-            } else if (!requiresCast && !required) {
+            if (!requiresCast && !required) {
                 builder.add("source.findViewById($L)", id.code);
             } else {
                 builder.add("$T.find", UTILS);
