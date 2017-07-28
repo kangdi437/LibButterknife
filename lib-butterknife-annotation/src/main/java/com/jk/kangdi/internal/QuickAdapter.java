@@ -6,11 +6,11 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Created by JINKANG on 2017/7/28.
+ * Created by admin on 2017/7/29.
  */
+
 @Retention(RetentionPolicy.CLASS)
 @Target(ElementType.FIELD)
-public @interface Adapter {
-    String layoutResId();
-    Class<?> beanType();
+public @interface QuickAdapter {
+    String value();
 }

@@ -2,8 +2,12 @@ package com.jk.kangdi;
 
 import com.google.auto.common.SuperficialValidation;
 import com.google.auto.service.AutoService;
+import com.google.common.collect.ImmutableList;
+import com.jk.kangdi.internal.Convert;
 import com.jk.kangdi.internal.ListenerClass;
 import com.jk.kangdi.internal.ListenerMethod;
+import com.jk.kangdi.internal.QuickAdapter;
+import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.JavaFile;
 import com.squareup.javapoet.TypeName;
 
@@ -48,6 +52,7 @@ import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 import javax.tools.Diagnostic;
 
+import static com.jk.kangdi.BindingSet.BASE_VIEWHOLDER;
 import static javax.lang.model.element.ElementKind.CLASS;
 import static javax.lang.model.element.ElementKind.INTERFACE;
 import static javax.lang.model.element.ElementKind.METHOD;
@@ -101,6 +106,8 @@ public class LibButterknifeProcessor extends AbstractProcessor {
         supportTypes.add(BindViews.class.getCanonicalName());
         supportTypes.add(ContentView.class.getCanonicalName());
         supportTypes.add(OnClick.class.getCanonicalName());
+        supportTypes.add(QuickAdapter.class.getCanonicalName());
+        supportTypes.add(Convert.class.getCanonicalName());
         return supportTypes;
     }
 
@@ -162,6 +169,21 @@ public class LibButterknifeProcessor extends AbstractProcessor {
                 parseContentView(element, builderMap, erasedTargetNames);
             } catch (Exception e) {
                 logParsingError(element, ContentView.class, e);
+            }
+        }
+
+        for (Element element : env.getElementsAnnotatedWith(QuickAdapter.class)) {
+            try {
+                parseQuickAdapter(element, builderMap, erasedTargetNames);
+            } catch (Exception e) {
+                logParsingError(element, QuickAdapter.class, e);
+            }
+        }
+        for (Element element : env.getElementsAnnotatedWith(Convert.class)) {
+            try {
+                parseConvert(element, builderMap, erasedTargetNames);
+            } catch (Exception e) {
+                logParsingError(element, Convert.class, e);
             }
         }
 
@@ -284,6 +306,7 @@ public class LibButterknifeProcessor extends AbstractProcessor {
         return name;
     }
 
+
     private void parseContentView(Element element, Map<TypeElement, BindingSet.Builder> builderMap,
                                 Set<TypeElement> erasedTargetNames) {
 
@@ -328,6 +351,46 @@ public class LibButterknifeProcessor extends AbstractProcessor {
     }
 
 
+
+
+    private void parseQuickAdapter(Element element, Map<TypeElement, BindingSet.Builder> builderMap,
+                                   Set<TypeElement> erasedTargetNames) {
+
+        TypeElement enclosingElement = (TypeElement) element.getEnclosingElement();
+
+        boolean hasError = isInaccessibleViaGeneratedCode(QuickAdapter.class, "fields", element)
+                || isBindingInWrongPackage(QuickAdapter.class, element);
+
+
+        if (hasError) {
+            return;
+        }
+
+        AdapterBinding adapterBinding = new AdapterBinding();
+        QuickAdapter annotation = element.getAnnotation(QuickAdapter.class);
+        TypeMirror typeMirror = element.asType();
+        if (typeMirror instanceof DeclaredType){
+            DeclaredType d = (DeclaredType) typeMirror;
+            List<? extends TypeMirror> typeArguments = d.getTypeArguments();
+            for (TypeMirror t : typeArguments) {
+                if (t.toString().equals(BASE_VIEWHOLDER.toString())) continue;
+                adapterBinding.beanType = ClassName.get(t);
+            }
+        }
+
+        adapterBinding.layoutResId = annotation.value();
+        adapterBinding.filedName = element.getSimpleName().toString();
+
+        BindingSet.Builder builder = builderMap.get(enclosingElement);
+
+        builder.addAdapterBinding(adapterBinding);
+
+    }
+    /**
+     * @param element
+     * @param builderMap
+     * @param erasedTargetNames
+     */
     public void parseBindView(Element element, Map<TypeElement, BindingSet.Builder> builderMap,
                               Set<TypeElement> erasedTargetNames){
         TypeElement enclosingElement = (TypeElement) element.getEnclosingElement();
@@ -409,6 +472,57 @@ public class LibButterknifeProcessor extends AbstractProcessor {
 
                 error(element, "Unable to generate view binder for @%s.\n\n%s",
                         annotationClass.getSimpleName(), stackTrace.toString());
+            }
+        }
+    }
+
+
+    private void parseConvert(Element element, Map<TypeElement, BindingSet.Builder> builderMap,
+                              Set<TypeElement> erasedTargetNames) {
+
+        TypeElement enclosingElement = (TypeElement) element.getEnclosingElement();
+
+        if (!(element instanceof ExecutableElement) || element.getKind() != METHOD) {
+            throw new IllegalStateException(
+                    String.format("@%s annotation must be on a method.", Convert.class.getSimpleName()));
+        }
+
+        ExecutableElement executableElement = (ExecutableElement) element;
+
+        //根据以下规则去寻找匹配的QuickAdapter
+        //1.根据对应的属性名称匹配
+        //2.根据item的布局去匹配
+        //3.根据beanType去匹配
+        //一般情况下只有一个适配器 , Convert注解默认就可以 , 如果beanType在一样的情况下可以传item布局
+        //两者都一样的极端情况下可以根据适配器的属性名称去匹配
+
+        String fieldName = executableElement.getAnnotation(Convert.class).itemLayoutId();
+        String itemId = executableElement.getAnnotation(Convert.class).itemLayoutId();
+        String methodName = executableElement.getSimpleName().toString();
+
+        List<? extends VariableElement> parameters = executableElement.getParameters();
+
+        BindingSet.Builder builder = builderMap.get(enclosingElement);
+        ImmutableList<AdapterBinding> adapterBindings = builder.getAdapterBinding();
+
+        for (AdapterBinding adapterBinding : adapterBindings) {
+            if (!"".equals(fieldName)){
+                if (fieldName.equals(adapterBinding.filedName)){
+                    adapterBinding.convertName = methodName;
+                    break;
+                }
+            }
+            if (!"".equals(itemId)){
+                if (fieldName.equals(adapterBinding.layoutResId)){
+                    adapterBinding.convertName = methodName;
+                    break;
+                }
+            }
+            for (VariableElement variableElement : parameters) {
+                TypeMirror typeMirror = variableElement.asType();
+                if (typeMirror.toString().equals(adapterBinding.beanType.toString())){
+                    adapterBinding.convertName = methodName;
+                }
             }
         }
     }
@@ -524,6 +638,8 @@ public class LibButterknifeProcessor extends AbstractProcessor {
             for (int i = 0; i < methodParameters.size(); i++) {
                 VariableElement methodParameter = methodParameters.get(i);
                 TypeMirror methodParameterType = methodParameter.asType();
+                String t = methodParameterType.toString();
+
                 if (methodParameterType instanceof TypeVariable) {
                     TypeVariable typeVariable = (TypeVariable) methodParameterType;
                     methodParameterType = typeVariable.getUpperBound();
@@ -751,6 +867,26 @@ public class LibButterknifeProcessor extends AbstractProcessor {
         return false;
     }
 
+    private boolean isBindingInWrongPackage(Class<? extends Annotation> annotationClass,
+                                            Element element) {
+        TypeElement enclosingElement = (TypeElement) element.getEnclosingElement();
+        //返回此类型元素的完全限定名称。
+        String qualifiedName = enclosingElement.getQualifiedName().toString();
+
+        if (qualifiedName.startsWith("android.")) {
+            error(element, "@%s-annotated class incorrectly in Android framework package. (%s)",
+                    annotationClass.getSimpleName(), qualifiedName);
+            return true;
+        }
+        if (qualifiedName.startsWith("java.")) {
+            error(element, "@%s-annotated class incorrectly in Java framework package. (%s)",
+                    annotationClass.getSimpleName(), qualifiedName);
+            return true;
+        }
+
+        return false;
+    }
+
     private boolean isInaccessibleViaGeneratedCode(Class<? extends Annotation> annotationClass,
                                                    String targetThing, Element element) {
         boolean hasError = false;
@@ -783,26 +919,6 @@ public class LibButterknifeProcessor extends AbstractProcessor {
         }
 
         return hasError;
-    }
-
-    private boolean isBindingInWrongPackage(Class<? extends Annotation> annotationClass,
-                                            Element element) {
-        TypeElement enclosingElement = (TypeElement) element.getEnclosingElement();
-        //返回此类型元素的完全限定名称。
-        String qualifiedName = enclosingElement.getQualifiedName().toString();
-
-        if (qualifiedName.startsWith("android.")) {
-            error(element, "@%s-annotated class incorrectly in Android framework package. (%s)",
-                    annotationClass.getSimpleName(), qualifiedName);
-            return true;
-        }
-        if (qualifiedName.startsWith("java.")) {
-            error(element, "@%s-annotated class incorrectly in Java framework package. (%s)",
-                    annotationClass.getSimpleName(), qualifiedName);
-            return true;
-        }
-
-        return false;
     }
 
     private void error(Element element, String message, Object... args) {

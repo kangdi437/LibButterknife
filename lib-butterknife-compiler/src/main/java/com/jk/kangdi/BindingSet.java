@@ -35,6 +35,7 @@ import static java.util.Collections.singletonList;
 import static javax.lang.model.element.Modifier.FINAL;
 import static javax.lang.model.element.Modifier.PRIVATE;
 import static javax.lang.model.element.Modifier.PUBLIC;
+import static javax.lang.model.element.Modifier.STATIC;
 
 /**
  * Created by JINKANG on 2017/7/24.
@@ -43,6 +44,8 @@ import static javax.lang.model.element.Modifier.PUBLIC;
 public class BindingSet {
 
     static final ClassName UTILS = ClassName.get("com.jk.kangdi.lib_butter_knife_api", "Utils");
+    static final ClassName QUICK_ADAPTER = ClassName.get("com.chad.library.adapter.base", "BaseQuickAdapter");
+    static final ClassName BASE_VIEWHOLDER = ClassName.get("com.chad.library.adapter.base", "BaseViewHolder");
     private static final ClassName UNBINDER = ClassName.get("com.jk.kangdi.lib_butter_knife_api", "Unbinder");
     private static final ClassName UI_THREAD =
             ClassName.get("android.support.annotation", "UiThread");
@@ -61,6 +64,7 @@ public class BindingSet {
     private final boolean isActivity;
     private final boolean isDialog;
     private final ImmutableList<ViewBinding> viewBindings;
+    private final ImmutableList<AdapterBinding> adapterBinding;
     private final ImmutableList<FieldCollectionViewBinding> collectionBindings;
     private final ImmutableList<ResourceBinding> resourceBindings;
     private final ContentViewBinding contentBinding;
@@ -70,7 +74,7 @@ public class BindingSet {
                        boolean isView, boolean isActivity, boolean isDialog, ImmutableList<ViewBinding> viewBindings,
                        ImmutableList<FieldCollectionViewBinding> collectionBindings,
                        ImmutableList<ResourceBinding> resourceBindings, BindingSet parentBinding ,
-                       ContentViewBinding contentBinding) {
+                       ContentViewBinding contentBinding , ImmutableList<AdapterBinding> adapterBinding) {
         this.isFinal = isFinal;
         this.targetTypeName = targetTypeName;
         this.bindingClassName = bindingClassName;
@@ -82,6 +86,7 @@ public class BindingSet {
         this.resourceBindings = resourceBindings;
         this.parentBinding = parentBinding;
         this.contentBinding = contentBinding;
+        this.adapterBinding = adapterBinding;
     }
 
     public static Builder newBuilder(TypeElement enclosingElement){
@@ -99,7 +104,7 @@ public class BindingSet {
         String packageName = getPackage(enclosingElement).getQualifiedName().toString();
         String className = enclosingElement.getQualifiedName().toString().substring(
                 packageName.length() + 1).replace('.', '$');
-        ClassName bindingClassName = ClassName.get(packageName, className + "_ViewBinding");
+        ClassName bindingClassName = ClassName.get(packageName, className);
 
         boolean isFinal = enclosingElement.getModifiers().contains(FINAL);
         return new Builder(targetType, bindingClassName, isFinal, isView, isActivity, isDialog);
@@ -110,9 +115,12 @@ public class BindingSet {
                 .addFileComment("Generated code. Do not modify!")
                 .build();
     }
+
+
+
     private TypeSpec createType(int sdk) {
         //创建类 public class XXX
-        TypeSpec.Builder result = TypeSpec.classBuilder(bindingClassName.simpleName())
+        TypeSpec.Builder result = TypeSpec.classBuilder(bindingClassName.simpleName() + "_ViewBinding")
                 .addModifiers(PUBLIC);
 
         // TODO: 2017/7/28 添加Adapter处理
@@ -155,6 +163,20 @@ public class BindingSet {
 //            result.addMethod(createBindingViewDelegateConstructor());
 //        }
 
+        if (hasAdapterBinding()){
+            for (AdapterBinding a : adapterBinding) {
+                if (a.convertName == null) continue;
+                result.addType(TypeSpec.classBuilder(bindingClassName.simpleName() + "_" + a.filedName
+                        + "_Adapter")
+                        .addModifiers(PUBLIC , STATIC)
+                        .superclass(ParameterizedTypeName.get(QUICK_ADAPTER , a.beanType , BASE_VIEWHOLDER))
+                        .addMethod(createAdapterBindingConstructor(a))
+                        .addField(targetTypeName, "target", PRIVATE)
+                        .addMethod(createConvert(a))
+                        .build());
+            }
+        }
+
         //在创建一个构造方法 , 这个构造方法中实现所有的初始化
         result.addMethod(createBindingConstructor(sdk));
 
@@ -162,6 +184,16 @@ public class BindingSet {
             result.addMethod(createBindingUnbindMethod(result));
         }
 
+        return result.build();
+    }
+
+    private MethodSpec createConvert(AdapterBinding a){
+        MethodSpec.Builder result = MethodSpec.methodBuilder("convert")
+                .addAnnotation(Override.class)
+                .addParameter(BASE_VIEWHOLDER , "baseViewHolder")
+                .addParameter(a.beanType , "item")
+                .addStatement("this.target.$L(baseViewHolder , item)" , a.convertName)
+                .addModifiers(PUBLIC);
         return result.build();
     }
 
@@ -349,6 +381,15 @@ public class BindingSet {
             }
         }
 
+        if (hasAdapterBinding()){
+            for (AdapterBinding a : adapterBinding) {
+                constructor.addStatement("target.$L = new $L(target)" ,
+                        a.filedName , bindingClassName.simpleName() + "_" + a.filedName
+                                + "_Adapter");
+            }
+        }
+
+
         if (!resourceBindings.isEmpty()) {
             if (constructorNeedsView()) {
                 constructor.addStatement("$T context = source.getContext()", CONTEXT);
@@ -435,8 +476,8 @@ public class BindingSet {
 //                            fieldBinding.getName(), UTILS, binding.getId().code,
 //                            asHumanDescription(singletonList(fieldBinding)), fieldBinding.getRawType());
 //                } else {
-                    result.addStatement("target.$L = ($T) view", fieldBinding.getName(),
-                            fieldBinding.getType());
+                result.addStatement("target.$L = ($T) view", fieldBinding.getName(),
+                        fieldBinding.getType());
 //                }
             } else {
                 result.addStatement("target.$L = view", fieldBinding.getName());
@@ -625,6 +666,15 @@ public class BindingSet {
         return builder.build();
     }
 
+    private MethodSpec createAdapterBindingConstructor(AdapterBinding a) {
+        MethodSpec.Builder builder = MethodSpec.constructorBuilder()
+                .addAnnotation(UI_THREAD)
+                .addModifiers(PUBLIC)
+                .addParameter(targetTypeName, "target");
+        builder.addStatement("super($L)" , a.layoutResId)
+        .addStatement("this.target = target");
+        return builder.build();
+    }
 
     private MethodSpec createBindingConstructorForActivity() {
         MethodSpec.Builder builder = MethodSpec.constructorBuilder()
@@ -645,6 +695,19 @@ public class BindingSet {
     private boolean hasContentBinding(){
         return contentBinding != null;
     }
+
+    private boolean hasAdapterBinding(){
+        boolean flag = !adapterBinding.isEmpty();
+
+        for (AdapterBinding a : adapterBinding) {
+            if(a.convertName != null){
+                return flag;
+            }
+        }
+
+        return false;
+    }
+
 
     //是否绑定的方法 , 例如onClick
     private boolean hasMethodBindings() {
@@ -704,6 +767,7 @@ public class BindingSet {
         private final ImmutableList.Builder<ResourceBinding> resourceBindings = ImmutableList.builder();
         private BindingSet parentBinding;
         private ContentViewBinding contentBinding;
+        private ImmutableList.Builder<AdapterBinding> adapterBinding = ImmutableList.builder();
 
         private Builder(TypeName targetTypeName, ClassName bindingClassName, boolean isFinal,
                         boolean isView, boolean isActivity, boolean isDialog) {
@@ -768,6 +832,16 @@ public class BindingSet {
             this.contentBinding = contentBinding;
         }
 
+
+        public void addAdapterBinding(AdapterBinding adapterBinding) {
+            this.adapterBinding.add(adapterBinding);
+        }
+
+        public ImmutableList<AdapterBinding> getAdapterBinding(){
+            return this.adapterBinding.build();
+        }
+
+
         BindingSet build() {
             //存储 <ViewBinding>
             ImmutableList.Builder<ViewBinding> viewBindings = ImmutableList.builder();
@@ -776,7 +850,7 @@ public class BindingSet {
             }
             return new BindingSet(targetTypeName, bindingClassName, isFinal, isView, isActivity, isDialog,
                     viewBindings.build(), collectionBindings.build(), resourceBindings.build(),
-                    parentBinding , contentBinding);
+                    parentBinding , contentBinding , adapterBinding.build());
         }
 
     }
