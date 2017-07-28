@@ -11,10 +11,15 @@ import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.ParameterizedTypeName;
 import com.squareup.javapoet.TypeName;
 import com.squareup.javapoet.TypeSpec;
+import com.squareup.javapoet.WildcardTypeName;
 
+import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -26,7 +31,6 @@ import static com.jk.kangdi.LibButterknifeProcessor.ACTIVITY_TYPE;
 import static com.jk.kangdi.LibButterknifeProcessor.DIALOG_TYPE;
 import static com.jk.kangdi.LibButterknifeProcessor.VIEW_TYPE;
 import static com.jk.kangdi.LibButterknifeProcessor.isSubtypeOfType;
-import static com.squareup.javapoet.ClassName.bestGuess;
 import static java.util.Collections.singletonList;
 import static javax.lang.model.element.Modifier.FINAL;
 import static javax.lang.model.element.Modifier.PRIVATE;
@@ -204,7 +208,7 @@ public class BindingSet {
             return;
         }
 
-        String fieldName = bindings.isBoundToRoot() ? "viewSource" : "view" + bindings.getId().value;
+        String fieldName = bindings.isBoundToRoot() ? "viewSource" : "view" + bindings.getId().value.replace("." , "_");
         result.addField(VIEW, fieldName, PRIVATE);
 
         // We only need to emit the null check if there are zero required bindings.
@@ -319,10 +323,10 @@ public class BindingSet {
         }
 
         if (hasViewBindings()) {
-//            if (hasViewLocal()) {
-//                // Local variable in which all views will be temporarily stored.
-//                constructor.addStatement("$T view", VIEW);
-//            }
+            if (hasViewLocal()) {
+                // Local variable in which all views will be temporarily stored.
+                constructor.addStatement("$T view", VIEW);
+            }
 
             //实例化BindView
             for (ViewBinding binding : viewBindings) {
@@ -382,16 +386,178 @@ public class BindingSet {
         }
 
         //这里做方法处理
-//        List<MemberViewBinding> requiredBindings = binding.getRequiredBindings();
-//        if (!debuggable || requiredBindings.isEmpty()) {
-//            result.addStatement("view = source.findViewById($L)", binding.getId().code);
-//        } else if (!binding.isBoundToRoot()) {
-//            result.addStatement("view = $T.findRequiredView(source, $L, $S)", UTILS,
-//                    binding.getId().code, asHumanDescription(requiredBindings));
-//        }
+        List<MemberViewBinding> requiredBindings = binding.getRequiredBindings();
+        if (!binding.isBoundToRoot()) {
+            result.addStatement("view = $T.findRequiredView(source, $L, $S)", UTILS,
+                    binding.getId().code, asHumanDescription(requiredBindings));
+        }
 //
-//        addFieldBinding(result, binding, debuggable);
-//        addMethodBindings(result, binding, debuggable);
+        addFieldBinding(result, binding);
+        addMethodBindings(result, binding);
+    }
+
+    private static List<ListenerMethod> getListenerMethods(ListenerClass listener) {
+        if (listener.method().length == 1) {
+            return Arrays.asList(listener.method());
+        }
+
+        try {
+            List<ListenerMethod> methods = new ArrayList<>();
+            Class<? extends Enum<?>> callbacks = listener.callbacks();
+            for (Enum<?> callbackMethod : callbacks.getEnumConstants()) {
+                Field callbackField = callbacks.getField(callbackMethod.name());
+                ListenerMethod method = callbackField.getAnnotation(ListenerMethod.class);
+                if (method == null) {
+                    throw new IllegalStateException(String.format("@%s's %s.%s missing @%s annotation.",
+                            callbacks.getEnclosingClass().getSimpleName(), callbacks.getSimpleName(),
+                            callbackMethod.name(), ListenerMethod.class.getSimpleName()));
+                }
+                methods.add(method);
+            }
+            return methods;
+        } catch (NoSuchFieldException e) {
+            throw new AssertionError(e);
+        }
+    }
+    private void addFieldBinding(MethodSpec.Builder result, ViewBinding binding) {
+        FieldViewBinding fieldBinding = binding.getFieldBinding();
+        if (fieldBinding != null) {
+            if (requiresCast(fieldBinding.getType())) {
+//                if (debuggable) {
+//                    result.addStatement("target.$L = $T.castView(view, $L, $S, $T.class)",
+//                            fieldBinding.getName(), UTILS, binding.getId().code,
+//                            asHumanDescription(singletonList(fieldBinding)), fieldBinding.getRawType());
+//                } else {
+                    result.addStatement("target.$L = ($T) view", fieldBinding.getName(),
+                            fieldBinding.getType());
+//                }
+            } else {
+                result.addStatement("target.$L = view", fieldBinding.getName());
+            }
+        }
+    }
+
+    private void addMethodBindings(MethodSpec.Builder result, ViewBinding binding) {
+        Map<ListenerClass, Map<ListenerMethod, Set<MethodViewBinding>>> classMethodBindings =
+                binding.getMethodBindings();
+        if (classMethodBindings.isEmpty()) {
+            return;
+        }
+
+        // We only need to emit the null check if there are zero required bindings.
+        boolean needsNullChecked = binding.getRequiredBindings().isEmpty();
+        if (needsNullChecked) {
+            result.beginControlFlow("if (view != null)");
+        }
+
+        // Add the view reference to the binding.
+        String fieldName = "viewSource";
+        String bindName = "source";
+        if (!binding.isBoundToRoot()) {
+            fieldName = "view" + binding.getId().value.replace("." , "_");
+            bindName = "view";
+        }
+        result.addStatement("$L = $N", fieldName, bindName);
+
+        for (Map.Entry<ListenerClass, Map<ListenerMethod, Set<MethodViewBinding>>> e
+                : classMethodBindings.entrySet()) {
+            ListenerClass listener = e.getKey();
+            Map<ListenerMethod, Set<MethodViewBinding>> methodBindings = e.getValue();
+
+            TypeSpec.Builder callback = TypeSpec.anonymousClassBuilder("")
+                    .superclass(ClassName.bestGuess(listener.type()));
+
+            for (ListenerMethod method : getListenerMethods(listener)) {
+                MethodSpec.Builder callbackMethod = MethodSpec.methodBuilder(method.name())
+                        .addAnnotation(Override.class)
+                        .addModifiers(PUBLIC)
+                        .returns(bestGuess(method.returnType()));
+                String[] parameterTypes = method.parameters();
+                for (int i = 0, count = parameterTypes.length; i < count; i++) {
+                    callbackMethod.addParameter(bestGuess(parameterTypes[i]), "p" + i);
+                }
+
+                boolean hasReturnType = !"void".equals(method.returnType());
+                CodeBlock.Builder builder = CodeBlock.builder();
+                if (hasReturnType) {
+                    builder.add("return ");
+                }
+
+                if (methodBindings.containsKey(method)) {
+                    for (MethodViewBinding methodBinding : methodBindings.get(method)) {
+                        builder.add("target.$L(", methodBinding.getName());
+                        List<Parameter> parameters = methodBinding.getParameters();
+                        String[] listenerParameters = method.parameters();
+                        for (int i = 0, count = parameters.size(); i < count; i++) {
+                            if (i > 0) {
+                                builder.add(", ");
+                            }
+
+                            Parameter parameter = parameters.get(i);
+                            int listenerPosition = parameter.getListenerPosition();
+
+                            if (parameter.requiresCast(listenerParameters[listenerPosition])) {
+                                builder.add("($T) p$L", parameter.getType(), listenerPosition);
+                            } else {
+                                builder.add("p$L", listenerPosition);
+                            }
+                        }
+                        builder.add(");\n");
+                    }
+                } else if (hasReturnType) {
+                    builder.add("$L;\n", method.defaultReturn());
+                }
+                callbackMethod.addCode(builder.build());
+                callback.addMethod(callbackMethod.build());
+            }
+
+            boolean requiresRemoval = listener.remover().length() != 0;
+            String listenerField = null;
+            if (requiresRemoval) {
+                TypeName listenerClassName = bestGuess(listener.type());
+                listenerField = fieldName + ((ClassName) listenerClassName).simpleName();
+                result.addStatement("$L = $L", listenerField, callback.build());
+            }
+
+            if (!VIEW_TYPE.equals(listener.targetType())) {
+                result.addStatement("(($T) $N).$L($L)", bestGuess(listener.targetType()), bindName,
+                        listener.setter(), requiresRemoval ? listenerField : callback.build());
+            } else {
+                result.addStatement("$N.$L($L)", bindName, listener.setter(),
+                        requiresRemoval ? listenerField : callback.build());
+            }
+        }
+
+        if (needsNullChecked) {
+            result.endControlFlow();
+        }
+    }
+
+    private static TypeName bestGuess(String type) {
+        switch (type) {
+            case "void": return TypeName.VOID;
+            case "boolean": return TypeName.BOOLEAN;
+            case "byte": return TypeName.BYTE;
+            case "char": return TypeName.CHAR;
+            case "double": return TypeName.DOUBLE;
+            case "float": return TypeName.FLOAT;
+            case "int": return TypeName.INT;
+            case "long": return TypeName.LONG;
+            case "short": return TypeName.SHORT;
+            default:
+                int left = type.indexOf('<');
+                if (left != -1) {
+                    ClassName typeClassName = ClassName.bestGuess(type.substring(0, left));
+                    List<TypeName> typeArguments = new ArrayList<>();
+                    do {
+                        typeArguments.add(WildcardTypeName.subtypeOf(Object.class));
+                        left = type.indexOf('<', left + 1);
+                    } while (left != -1);
+                    return ParameterizedTypeName.get(typeClassName,
+                            typeArguments.toArray(new TypeName[typeArguments.size()]));
+                }
+                return ClassName.bestGuess(type);
+        }
     }
 
     static String asHumanDescription(Collection<? extends MemberViewBinding> bindings) {
@@ -540,6 +706,19 @@ public class BindingSet {
             this.isView = isView;
             this.isActivity = isActivity;
             this.isDialog = isDialog;
+        }
+
+        boolean addMethod(
+                Id id,
+                ListenerClass listener,
+                ListenerMethod method,
+                MethodViewBinding binding) {
+            ViewBinding.Builder viewBinding = getOrCreateViewBindings(id);
+            if (viewBinding.hasMethodBinding(listener, method) && !"void".equals(method.returnType())) {
+                return false;
+            }
+            viewBinding.addMethodBinding(listener, method, binding);
+            return true;
         }
 
         void setParent(BindingSet parent) {

@@ -1,6 +1,9 @@
 package com.jk.kangdi;
 
+import com.google.auto.common.SuperficialValidation;
 import com.google.auto.service.AutoService;
+import com.jk.kangdi.internal.ListenerClass;
+import com.jk.kangdi.internal.ListenerMethod;
 import com.squareup.javapoet.JavaFile;
 import com.squareup.javapoet.TypeName;
 
@@ -8,8 +11,12 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.lang.annotation.Annotation;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.BitSet;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -27,9 +34,11 @@ import javax.annotation.processing.RoundEnvironment;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.Element;
+import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.Name;
 import javax.lang.model.element.TypeElement;
+import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
@@ -41,6 +50,7 @@ import javax.tools.Diagnostic;
 
 import static javax.lang.model.element.ElementKind.CLASS;
 import static javax.lang.model.element.ElementKind.INTERFACE;
+import static javax.lang.model.element.ElementKind.METHOD;
 import static javax.lang.model.element.Modifier.PRIVATE;
 import static javax.lang.model.element.Modifier.STATIC;
 
@@ -57,7 +67,9 @@ public class LibButterknifeProcessor extends AbstractProcessor {
     private static final String NULLABLE_ANNOTATION_NAME = "Nullable";
     static final Id NO_ID = new Id("-1");
     private static final String LIST_TYPE = List.class.getCanonicalName();
-
+//    private static final List<Class<? extends Annotation>> LISTENERS = Arrays.asList(
+//            OnClick.class
+//    );
 
     private final Map<QualifiedId, Id> symbols = new LinkedHashMap<>();
     private Elements elementUtils;
@@ -83,11 +95,13 @@ public class LibButterknifeProcessor extends AbstractProcessor {
      * */
     @Override
     public Set<String> getSupportedAnnotationTypes() {
+
         HashSet<String> supportTypes = new LinkedHashSet<>();
         // 把支持的类型添加进去
         supportTypes.add(BindView.class.getCanonicalName());
         supportTypes.add(BindViews.class.getCanonicalName());
         supportTypes.add(ContentView.class.getCanonicalName());
+        supportTypes.add(OnClick.class.getCanonicalName());
         return supportTypes;
     }
 
@@ -152,6 +166,11 @@ public class LibButterknifeProcessor extends AbstractProcessor {
                 logParsingError(element, ContentView.class, e);
             }
         }
+
+        // Process each annotation that corresponds to a listener.
+//        for (Class<? extends Annotation> listener : LISTENERS) {
+            findAndParseListener(env, OnClick.class, builderMap, erasedTargetNames);
+//        }
 
             // Associate superclass binders with their subclass binders. This is a queue-based tree walk
         // which starts at the roots (superclasses) and walks to the leafs (subclasses).
@@ -377,6 +396,208 @@ public class LibButterknifeProcessor extends AbstractProcessor {
 
         // Add the type-erased version to the valid binding targets set.
         erasedTargetNames.add(enclosingElement);
+    }
+
+    private void findAndParseListener(RoundEnvironment env,
+                                      Class<? extends Annotation> annotationClass,
+                                      Map<TypeElement, BindingSet.Builder> builderMap, Set<TypeElement> erasedTargetNames) {
+        for (Element element : env.getElementsAnnotatedWith(annotationClass)) {
+            if (!SuperficialValidation.validateElement(element)) continue;
+            try {
+                parseListenerAnnotation(annotationClass, element, builderMap, erasedTargetNames);
+            } catch (Exception e) {
+                StringWriter stackTrace = new StringWriter();
+                e.printStackTrace(new PrintWriter(stackTrace));
+
+                error(element, "Unable to generate view binder for @%s.\n\n%s",
+                        annotationClass.getSimpleName(), stackTrace.toString());
+            }
+        }
+    }
+
+    private void parseListenerAnnotation(Class<? extends Annotation> annotationClass, Element element,
+                                         Map<TypeElement, BindingSet.Builder> builderMap, Set<TypeElement> erasedTargetNames)
+            throws Exception {
+        // This should be guarded by the annotation's @Target but it's worth a check for safe casting.
+        if (!(element instanceof ExecutableElement) || element.getKind() != METHOD) {
+            throw new IllegalStateException(
+                    String.format("@%s annotation must be on a method.", annotationClass.getSimpleName()));
+        }
+
+        ExecutableElement executableElement = (ExecutableElement) element;
+        TypeElement enclosingElement = (TypeElement) element.getEnclosingElement();
+
+        // Assemble information on the method.
+        Annotation annotation = element.getAnnotation(annotationClass);
+        Method annotationValue = annotationClass.getDeclaredMethod("value");
+        if (annotationValue.getReturnType() != String[].class) {
+            throw new IllegalStateException(
+                    String.format("@%s annotation value() type not String[].", annotationClass));
+        }
+
+
+        String[] ids = (String[]) annotationValue.invoke(annotation);
+        String name = executableElement.getSimpleName().toString();
+        boolean hasError = isInaccessibleViaGeneratedCode(annotationClass, "methods", element);
+        hasError |= isBindingInWrongPackage(annotationClass, element);
+
+        String duplicateId = findDuplicate(ids);
+        if (duplicateId != null) {
+            error(element, "@%s annotation for method contains duplicate ID %d. (%s.%s)",
+                    annotationClass.getSimpleName(), duplicateId, enclosingElement.getQualifiedName(),
+                    element.getSimpleName());
+            hasError = true;
+        }
+
+        ListenerClass listener = annotationClass.getAnnotation(ListenerClass.class);
+        if (listener == null) {
+            throw new IllegalStateException(
+                    String.format("No @%s defined on @%s.", ListenerClass.class.getSimpleName(),
+                            annotationClass.getSimpleName()));
+        }
+
+        for (String id : ids) {
+            if ("-1".equals(id)) {
+                if (ids.length == 1) {
+                } else {
+                    error(element, "@%s annotation contains invalid ID %d. (%s.%s)",
+                            annotationClass.getSimpleName(), id, enclosingElement.getQualifiedName(),
+                            element.getSimpleName());
+                    hasError = true;
+                }
+            }
+        }
+
+        ListenerMethod method;
+        ListenerMethod[] methods = listener.method();
+        if (methods.length > 1) {
+            throw new IllegalStateException(String.format("Multiple listener methods specified on @%s.",
+                    annotationClass.getSimpleName()));
+        } else if (methods.length == 1) {
+            if (listener.callbacks() != ListenerClass.NONE.class) {
+                throw new IllegalStateException(
+                        String.format("Both method() and callback() defined on @%s.",
+                                annotationClass.getSimpleName()));
+            }
+            method = methods[0];
+        } else {
+            Method annotationCallback = annotationClass.getDeclaredMethod("callback");
+            Enum<?> callback = (Enum<?>) annotationCallback.invoke(annotation);
+            Field callbackField = callback.getDeclaringClass().getField(callback.name());
+            method = callbackField.getAnnotation(ListenerMethod.class);
+            if (method == null) {
+                throw new IllegalStateException(
+                        String.format("No @%s defined on @%s's %s.%s.", ListenerMethod.class.getSimpleName(),
+                                annotationClass.getSimpleName(), callback.getDeclaringClass().getSimpleName(),
+                                callback.name()));
+            }
+        }
+
+        // Verify that the method has equal to or less than the number of parameters as the listener.
+        List<? extends VariableElement> methodParameters = executableElement.getParameters();
+        if (methodParameters.size() > method.parameters().length) {
+            error(element, "@%s methods can have at most %s parameter(s). (%s.%s)",
+                    annotationClass.getSimpleName(), method.parameters().length,
+                    enclosingElement.getQualifiedName(), element.getSimpleName());
+            hasError = true;
+        }
+
+        // Verify method return type matches the listener.
+        TypeMirror returnType = executableElement.getReturnType();
+        if (returnType instanceof TypeVariable) {
+            TypeVariable typeVariable = (TypeVariable) returnType;
+            returnType = typeVariable.getUpperBound();
+        }
+        if (!returnType.toString().equals(method.returnType())) {
+            error(element, "@%s methods must have a '%s' return type. (%s.%s)",
+                    annotationClass.getSimpleName(), method.returnType(),
+                    enclosingElement.getQualifiedName(), element.getSimpleName());
+            hasError = true;
+        }
+
+        if (hasError) {
+            return;
+        }
+        Parameter[] parameters = Parameter.NONE;
+        if (!methodParameters.isEmpty()) {
+            parameters = new Parameter[methodParameters.size()];
+            BitSet methodParameterUsed = new BitSet(methodParameters.size());
+            String[] parameterTypes = method.parameters();
+            for (int i = 0; i < methodParameters.size(); i++) {
+                VariableElement methodParameter = methodParameters.get(i);
+                TypeMirror methodParameterType = methodParameter.asType();
+                if (methodParameterType instanceof TypeVariable) {
+                    TypeVariable typeVariable = (TypeVariable) methodParameterType;
+                    methodParameterType = typeVariable.getUpperBound();
+                }
+
+                for (int j = 0; j < parameterTypes.length; j++) {
+                    if (methodParameterUsed.get(j)) {
+                        continue;
+                    }
+                    if ((isSubtypeOfType(methodParameterType, parameterTypes[j])
+                            && isSubtypeOfType(methodParameterType, VIEW_TYPE))
+                            || isTypeEqual(methodParameterType, parameterTypes[j])
+                            || isInterface(methodParameterType)) {
+                        parameters[i] = new Parameter(j, TypeName.get(methodParameterType));
+                        methodParameterUsed.set(j);
+                        break;
+                    }
+                }
+                if (parameters[i] == null) {
+                    StringBuilder builder = new StringBuilder();
+                    builder.append("Unable to match @")
+                            .append(annotationClass.getSimpleName())
+                            .append(" method arguments. (")
+                            .append(enclosingElement.getQualifiedName())
+                            .append('.')
+                            .append(element.getSimpleName())
+                            .append(')');
+                    for (int j = 0; j < parameters.length; j++) {
+                        Parameter parameter = parameters[j];
+                        builder.append("\n\n  Parameter #")
+                                .append(j + 1)
+                                .append(": ")
+                                .append(methodParameters.get(j).asType().toString())
+                                .append("\n    ");
+                        if (parameter == null) {
+                            builder.append("did not match any listener parameters");
+                        } else {
+                            builder.append("matched listener parameter #")
+                                    .append(parameter.getListenerPosition() + 1)
+                                    .append(": ")
+                                    .append(parameter.getType());
+                        }
+                    }
+                    builder.append("\n\nMethods may have up to ")
+                            .append(method.parameters().length)
+                            .append(" parameter(s):\n");
+                    for (String parameterType : method.parameters()) {
+                        builder.append("\n  ").append(parameterType);
+                    }
+                    builder.append(
+                            "\n\nThese may be listed in any order but will be searched for from top to bottom.");
+                    error(executableElement, builder.toString());
+                    return;
+                }
+            }
+        }
+
+        MethodViewBinding binding = new MethodViewBinding(name, Arrays.asList(parameters), true);
+        BindingSet.Builder builder = getOrCreateBindingBuilder(builderMap, enclosingElement);
+        for (String id : ids) {
+            QualifiedId qualifiedId = elementToQualifiedId(element, id);
+            if (!builder.addMethod(getId(qualifiedId), listener, method, binding)) {
+                error(element, "Multiple listener methods with return value specified for ID %d. (%s.%s)",
+                        id, enclosingElement.getQualifiedName(), element.getSimpleName());
+                return;
+            }
+        }
+
+        // Add the type-erased version to the valid binding targets set.
+        erasedTargetNames.add(enclosingElement);
+
+
     }
 
     private void parseBindViews(Element element, Map<TypeElement, BindingSet.Builder> builderMap,

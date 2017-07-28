@@ -6,6 +6,7 @@ import com.jk.kangdi.internal.ListenerMethod;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -96,6 +97,28 @@ final class ViewBinding {
             return new ViewBinding(id, methodBindings, fieldBinding);
         }
 
+
+        public boolean hasMethodBinding(ListenerClass listener, ListenerMethod method) {
+            Map<ListenerMethod, Set<MethodViewBinding>> methods = methodBindings.get(listener);
+            return methods != null && methods.containsKey(method);
+        }
+
+        public void addMethodBinding(ListenerClass listener, ListenerMethod method,
+                                     MethodViewBinding binding) {
+            Map<ListenerMethod, Set<MethodViewBinding>> methods = methodBindings.get(listener);
+            Set<MethodViewBinding> set = null;
+            if (methods == null) {
+                methods = new LinkedHashMap<>();
+                methodBindings.put(listener, methods);
+            } else {
+                set = methods.get(method);
+            }
+            if (set == null) {
+                set = new LinkedHashSet<>();
+                methods.put(method, set);
+            }
+            set.add(binding);
+        }
     }
 
 }
