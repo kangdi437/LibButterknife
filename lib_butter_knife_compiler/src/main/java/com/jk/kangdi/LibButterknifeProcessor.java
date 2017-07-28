@@ -83,7 +83,6 @@ public class LibButterknifeProcessor extends AbstractProcessor {
         super.init(env);
         elementUtils = env.getElementUtils();
         mMessager = env.getMessager();
-        mMessager.printMessage(Diagnostic.Kind.NOTE , ">>>>>");
         filer = env.getFiler();
         typeUtils = env.getTypeUtils();
 
@@ -112,7 +111,6 @@ public class LibButterknifeProcessor extends AbstractProcessor {
 
     @Override
     public boolean process(Set<? extends TypeElement> set, RoundEnvironment env) {
-        mMessager.printMessage(Diagnostic.Kind.NOTE , "<<<");
         Map<TypeElement, BindingSet> bindingMap = findAndParseTargets(env);
 
         for (Map.Entry<TypeElement, BindingSet> entry : bindingMap.entrySet()) {
