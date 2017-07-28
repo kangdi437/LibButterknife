@@ -1,2 +1,2 @@
 include ':sample:app',  ':sample:library'
-include':lib_butter_knife_annotation', ':lib_butter_knife_compiler', ':lib_butter_knife_api'
+include ':lib-butterknife-annotation', ':lib-butterknife-compiler', ':lib-butterknife-api'

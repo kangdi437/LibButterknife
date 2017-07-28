@@ -8,9 +8,9 @@
         <option name="modules">
           <set>
             <option value="$PROJECT_DIR$" />
-            <option value="$PROJECT_DIR$/lib_butter_knife_annotation" />
-            <option value="$PROJECT_DIR$/lib_butter_knife_api" />
-            <option value="$PROJECT_DIR$/lib_butter_knife_compiler" />
+            <option value="$PROJECT_DIR$/lib-butterknife-annotation" />
+            <option value="$PROJECT_DIR$/lib-butterknife-api" />
+            <option value="$PROJECT_DIR$/lib-butterknife-compiler" />
             <option value="$PROJECT_DIR$/sample" />
             <option value="$PROJECT_DIR$/sample/app" />
             <option value="$PROJECT_DIR$/sample/library" />

@@ -114,6 +114,13 @@ public class BindingSet {
         //创建类 public class XXX
         TypeSpec.Builder result = TypeSpec.classBuilder(bindingClassName.simpleName())
                 .addModifiers(PUBLIC);
+
+        // TODO: 2017/7/28 添加Adapter处理
+//        result.addType(TypeSpec.classBuilder(bindingClassName.simpleName() + "_Adapter")
+//                .addModifiers(PUBLIC , STATIC)
+//                .superclass(ClassName.get(TypeElement))
+//                .build());
+
         if (isFinal) {
             result.addModifiers(FINAL);
         }
