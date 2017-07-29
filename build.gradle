@@ -25,7 +25,7 @@ ext {
     userOrg = 'kangdi'
     groupId = 'com.jk.kangdi'
     uploadName = 'LibButterknife'
-    publishVersion = '1.0.0'
+    publishVersion = '1.0.1'
     desc = 'a viewInjector for lib'
     website = 'https://github.com/kangdi437/LibButterknife'
     licences = ['Apache-2.0']
