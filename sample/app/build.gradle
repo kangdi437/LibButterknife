@@ -28,9 +28,12 @@ android {
     }
 dependencies {
     compile 'com.github.CymChad:BaseRecyclerViewAdapterHelper:2.9.1'
-    compile fileTree(dir: 'libs', include: ['*.jar'])
+    compile fileTree(include: ['*.jar'], dir: 'libs')
     compile 'com.android.support:appcompat-v7:26.+'
-
-    annotationProcessor project (':lib-butterknife-compiler')
-    compile project (':sample:library')
+    //    compile 'com.jk.kangdi:libbutterknife-annotation:1.0.0'
+    compile 'com.jk.kangdi:libbutterknife-api:1.0.0'
+    compile 'com.hyman:basetools:1.0.0'
+    annotationProcessor project(':lib-butterknife-compiler')
+    compile project(':sample:library')
+    compile 'com.android.support:recyclerview-v7:26.0.0-alpha1'
 }

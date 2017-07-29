@@ -379,6 +379,7 @@ public class LibButterknifeProcessor extends AbstractProcessor {
         }
 
         adapterBinding.layoutResId = annotation.value();
+        adapterBinding.emptyResId = annotation.emptyResId();
         adapterBinding.filedName = element.getSimpleName().toString();
 
         BindingSet.Builder builder = builderMap.get(enclosingElement);

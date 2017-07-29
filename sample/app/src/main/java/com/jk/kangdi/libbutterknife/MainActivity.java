@@ -31,7 +31,7 @@ public class MainActivity extends AppCompatActivity {
     @BindView("123")
     List<String> list;
 
-    @QuickAdapter("android.R.layout.simple_list_item_1")
+    @QuickAdapter(value = "android.R.layout.simple_list_item_1" , emptyResId="R.layout.empty")
     BaseQuickAdapter<String , BaseViewHolder> a;
 
 

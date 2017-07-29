@@ -16,5 +16,8 @@ public class AdapterBinding {
     String layoutResId;
     //bean类型
     TypeName beanType;
+    //empty布局
+    String emptyResId;
+
 
 }

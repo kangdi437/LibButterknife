@@ -229,6 +229,14 @@ public class BindingSet {
                 addFieldAndUnbindStatement(bindingClass, result, binding);
             }
         }
+        
+        if (hasAdapterBinding()){
+            result.addCode("\n");
+            for (AdapterBinding a : adapterBinding) {
+                result.addStatement("target.$L = null", a.filedName);
+            }
+        }
+        
 
         if (parentBinding != null) {
             result.addCode("\n");
@@ -386,6 +394,11 @@ public class BindingSet {
                 constructor.addStatement("target.$L = new $L(target)" ,
                         a.filedName , bindingClassName.simpleName() + "_" + a.filedName
                                 + "_Adapter");
+                if (a.emptyResId != null && !"".equals(a.emptyResId)){
+                    constructor.addStatement("target.$L.setEmptyView(target.getLayoutInflater()" +
+                            ".inflate($L , null))" , a.filedName , a.emptyResId);
+                }
+
             }
         }
 
