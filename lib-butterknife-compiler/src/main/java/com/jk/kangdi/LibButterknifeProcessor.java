@@ -66,7 +66,7 @@ import static javax.lang.model.element.Modifier.STATIC;
 @AutoService(Processor.class)
 public class LibButterknifeProcessor extends AbstractProcessor {
 
-    public static final String KEY_MODULE_NAME = "module_pkg";
+    public static final String KEY_MODULE_NAME = "modulePkg";
 
     static final String VIEW_TYPE = "android.view.View";
     static final String ACTIVITY_TYPE = "android.app.Activity";

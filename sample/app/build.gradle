@@ -11,7 +11,7 @@ android {
         versionName "1.0"
         javaCompileOptions {
             annotationProcessorOptions {
-                arguments = [module_pkg: applicationId]
+                arguments = [modulePkg: applicationId]
             }
         }
     }

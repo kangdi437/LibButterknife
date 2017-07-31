@@ -451,8 +451,8 @@ public class BindingSet {
         //这里做方法处理
         List<MemberViewBinding> requiredBindings = binding.getRequiredBindings();
         if (!binding.isBoundToRoot()) {
-            result.addStatement("view = $T.findRequiredView(source, $L, $S)", UTILS,
-                    binding.getId().code, asHumanDescription(requiredBindings));
+            result.addStatement("view = $T.findRequiredView(source, $L.$L, $S)", UTILS,
+                    moduleName , binding.getId().code, asHumanDescription(requiredBindings));
         }
 //
         addFieldBinding(result, binding);

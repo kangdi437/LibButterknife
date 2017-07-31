@@ -12,7 +12,7 @@ android {
 
         javaCompileOptions {
             annotationProcessorOptions {
-                arguments = [module_pkg: "com.jk.kangdi.library"]
+                arguments = [modulePkg: "com.jk.kangdi.library"]
             }
         }
     }
