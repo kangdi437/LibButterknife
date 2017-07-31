@@ -16,9 +16,9 @@ public class ContentViewBinding {
         this.value = value;
     }
 
-    CodeBlock render(){
+    CodeBlock render(String moduleName){
         return CodeBlock.builder()
-            .add("target.setContentView($L)" , value).build();
+            .add("target.setContentView($L.$L)" , moduleName , value).build();
     }
 
 

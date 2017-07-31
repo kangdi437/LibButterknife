@@ -69,12 +69,14 @@ public class BindingSet {
     private final ImmutableList<ResourceBinding> resourceBindings;
     private final ContentViewBinding contentBinding;
     private final BindingSet parentBinding;
+    private final String moduleName;
 
-    private BindingSet(TypeName targetTypeName, ClassName bindingClassName, boolean isFinal,
+    private BindingSet(String moduleName , TypeName targetTypeName, ClassName bindingClassName, boolean isFinal,
                        boolean isView, boolean isActivity, boolean isDialog, ImmutableList<ViewBinding> viewBindings,
                        ImmutableList<FieldCollectionViewBinding> collectionBindings,
                        ImmutableList<ResourceBinding> resourceBindings, BindingSet parentBinding ,
                        ContentViewBinding contentBinding , ImmutableList<AdapterBinding> adapterBinding) {
+        this.moduleName = moduleName;
         this.isFinal = isFinal;
         this.targetTypeName = targetTypeName;
         this.bindingClassName = bindingClassName;
@@ -89,7 +91,7 @@ public class BindingSet {
         this.adapterBinding = adapterBinding;
     }
 
-    public static Builder newBuilder(TypeElement enclosingElement){
+    public static Builder newBuilder(TypeElement enclosingElement , String moduleName){
         TypeMirror typeMirror = enclosingElement.asType();
 
         boolean isView = isSubtypeOfType(typeMirror, VIEW_TYPE);
@@ -107,7 +109,7 @@ public class BindingSet {
         ClassName bindingClassName = ClassName.get(packageName, className);
 
         boolean isFinal = enclosingElement.getModifiers().contains(FINAL);
-        return new Builder(targetType, bindingClassName, isFinal, isView, isActivity, isDialog);
+        return new Builder(moduleName , targetType, bindingClassName, isFinal, isView, isActivity, isDialog);
     }
 
     JavaFile brewJava(int sdk, boolean debuggable) {
@@ -366,7 +368,7 @@ public class BindingSet {
         }
 
         if (hasContentBinding()){
-            constructor.addStatement("$L" , contentBinding.render());
+            constructor.addStatement("$L" , contentBinding.render(moduleName));
         }
 
         if (hasViewBindings()) {
@@ -381,7 +383,7 @@ public class BindingSet {
             }
             //实例化BindViews
             for (FieldCollectionViewBinding binding : collectionBindings) {
-                constructor.addStatement("$L", binding.render());
+                constructor.addStatement("$L", binding.render(moduleName));
             }
 
             if (!resourceBindings.isEmpty()) {
@@ -396,7 +398,7 @@ public class BindingSet {
                                 + "_Adapter");
                 if (a.emptyResId != null && !"".equals(a.emptyResId)){
                     constructor.addStatement("target.$L.setEmptyView(target.getLayoutInflater()" +
-                            ".inflate($L , null))" , a.filedName , a.emptyResId);
+                            ".inflate($L.$L , null))" , a.filedName , moduleName , a.emptyResId);
                 }
 
             }
@@ -433,7 +435,7 @@ public class BindingSet {
             if (requiresCast) {
                 builder.add("AsType");
             }
-            builder.add("(source, $L", binding.getId().code);
+            builder.add("(source, $L.$L", moduleName , binding.getId().code);
             //描述
             if (fieldBinding.isRequired() || requiresCast) {
                 builder.add(", $S", asHumanDescription(singletonList(fieldBinding)));
@@ -684,7 +686,7 @@ public class BindingSet {
                 .addAnnotation(UI_THREAD)
                 .addModifiers(PUBLIC)
                 .addParameter(targetTypeName, "target");
-        builder.addStatement("super($L)" , a.layoutResId)
+        builder.addStatement("super($L.$L)" , moduleName , a.layoutResId)
         .addStatement("this.target = target");
         return builder.build();
     }
@@ -781,8 +783,9 @@ public class BindingSet {
         private BindingSet parentBinding;
         private ContentViewBinding contentBinding;
         private ImmutableList.Builder<AdapterBinding> adapterBinding = ImmutableList.builder();
+        private String moduleName;
 
-        private Builder(TypeName targetTypeName, ClassName bindingClassName, boolean isFinal,
+        private Builder(String moduleName , TypeName targetTypeName, ClassName bindingClassName, boolean isFinal,
                         boolean isView, boolean isActivity, boolean isDialog) {
             this.targetTypeName = targetTypeName;
             this.bindingClassName = bindingClassName;
@@ -790,6 +793,7 @@ public class BindingSet {
             this.isView = isView;
             this.isActivity = isActivity;
             this.isDialog = isDialog;
+            this.moduleName = moduleName;
         }
 
         boolean addMethod(
@@ -861,7 +865,7 @@ public class BindingSet {
             for (ViewBinding.Builder builder : viewIdMap.values()) {
                 viewBindings.add(builder.build());
             }
-            return new BindingSet(targetTypeName, bindingClassName, isFinal, isView, isActivity, isDialog,
+            return new BindingSet(moduleName , targetTypeName, bindingClassName, isFinal, isView, isActivity, isDialog,
                     viewBindings.build(), collectionBindings.build(), resourceBindings.build(),
                     parentBinding , contentBinding , adapterBinding.build());
         }

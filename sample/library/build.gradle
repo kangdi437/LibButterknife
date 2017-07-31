@@ -10,6 +10,11 @@ android {
         versionCode 1
         versionName "1.0"
 
+        javaCompileOptions {
+            annotationProcessorOptions {
+                arguments = [module_pkg: "com.jk.kangdi.library"]
+            }
+        }
     }
     buildTypes {
         release {
@@ -22,8 +27,8 @@ android {
     }
 
 }
-
 dependencies {
+    compile 'com.github.CymChad:BaseRecyclerViewAdapterHelper:2.9.1'
     compile fileTree(dir: 'libs', include: ['*.jar'])
     compile project(':lib-butterknife-annotation')
     compile project(':lib-butterknife-api')

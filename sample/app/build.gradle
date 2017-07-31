@@ -9,7 +9,13 @@ android {
         targetSdkVersion 25
         versionCode 1
         versionName "1.0"
+        javaCompileOptions {
+            annotationProcessorOptions {
+                arguments = [module_pkg: applicationId]
+            }
+        }
     }
+
     buildTypes {
         release {
             minifyEnabled false
@@ -21,13 +27,8 @@ android {
     }
 
 }
-    repositories {
-        jcenter()
-        //BaseRecyclerViewAdapterHelper
-        maven { url "https://jitpack.io" }
-    }
+
 dependencies {
-    compile 'com.github.CymChad:BaseRecyclerViewAdapterHelper:2.9.1'
     compile fileTree(include: ['*.jar'], dir: 'libs')
     compile 'com.android.support:appcompat-v7:26.+'
     //    compile 'com.jk.kangdi:libbutterknife-annotation:1.0.0'

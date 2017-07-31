@@ -17,8 +17,6 @@ import com.jk.kangdi.internal.Convert;
 import com.jk.kangdi.internal.QuickAdapter;
 import com.jk.kangdi.lib_butter_knife_api.ButterKnife;
 
-import java.util.List;
-
 @ContentView("R.layout.activity_main")
 public class MainActivity extends AppCompatActivity {
 
@@ -28,10 +26,10 @@ public class MainActivity extends AppCompatActivity {
     @BindViews({"R.id.btn1" , "R.id.btn2" , "R.id.btn3" , "R.id.btn4"})
     Button[] btns;
 
-    @BindView("123")
-    List<String> list;
+//    @BindView("123")
+//    List<String> list;
 
-    @QuickAdapter(value = "android.R.layout.simple_list_item_1" , emptyResId="R.layout.empty")
+    @QuickAdapter(value = "R.layout.item1" , emptyResId="R.layout.empty")
     BaseQuickAdapter<String , BaseViewHolder> a;
 
 

@@ -66,6 +66,8 @@ import static javax.lang.model.element.Modifier.STATIC;
 @AutoService(Processor.class)
 public class LibButterknifeProcessor extends AbstractProcessor {
 
+    public static final String KEY_MODULE_NAME = "module_pkg";
+
     static final String VIEW_TYPE = "android.view.View";
     static final String ACTIVITY_TYPE = "android.app.Activity";
     static final String DIALOG_TYPE = "android.app.Dialog";
@@ -81,6 +83,7 @@ public class LibButterknifeProcessor extends AbstractProcessor {
     private Messager mMessager;
     private Filer filer;
     private Types typeUtils;
+    private String moduleName;
 
 
     @Override
@@ -90,8 +93,11 @@ public class LibButterknifeProcessor extends AbstractProcessor {
         mMessager = env.getMessager();
         filer = env.getFiler();
         typeUtils = env.getTypeUtils();
-
-
+        Map<String, String> options = processingEnv.getOptions();
+        moduleName = options.get(KEY_MODULE_NAME);
+        if (moduleName == null || moduleName.equals("")){
+            throw new RuntimeException("LibButterknife::Compiler >>> No module name, for more information, look at gradle log.");
+        }
     }
 
     /**
@@ -290,7 +296,7 @@ public class LibButterknifeProcessor extends AbstractProcessor {
             Map<TypeElement, BindingSet.Builder> builderMap, TypeElement enclosingElement) {
         BindingSet.Builder builder = builderMap.get(enclosingElement);
         if (builder == null) {
-            builder = BindingSet.newBuilder(enclosingElement);
+            builder = BindingSet.newBuilder(enclosingElement , moduleName);
             builderMap.put(enclosingElement, builder);
         }
         return builder;

@@ -39,7 +39,7 @@ final class FieldCollectionViewBinding {
         this.required = required;
     }
 
-    CodeBlock render() {
+    CodeBlock render(String moduleName) {
         CodeBlock.Builder builder = CodeBlock.builder()
                 .add("target.$L = $T.$L(", name, UTILS, kind.factoryName);
         for (int i = 0; i < ids.size(); i++) {
@@ -51,14 +51,14 @@ final class FieldCollectionViewBinding {
             Id id = ids.get(i);
             boolean requiresCast = BindingSet.requiresCast(type);
             if (!requiresCast && !required) {
-                builder.add("source.findViewById($L)", id.code);
+                builder.add("source.findViewById($L.$L)", moduleName , id.code);
             } else {
                 builder.add("$T.find", UTILS);
                 builder.add(required ? "RequiredView" : "OptionalView");
                 if (requiresCast) {
                     builder.add("AsType");
                 }
-                builder.add("(source, $L, \"field '$L'\"", id.code, name);
+                builder.add("(source, $L.$L, \"field '$L'\"", moduleName , id.code, name);
                 if (requiresCast) {
                     TypeName rawType = type;
                     if (rawType instanceof ParameterizedTypeName) {
